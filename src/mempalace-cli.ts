@@ -1,5 +1,4 @@
 import execa from 'execa';
-import path from 'path';
 
 async function executeMempalace(args: string[], options: any = {}): Promise<any> {
   const defaultOptions = {
@@ -28,8 +27,12 @@ async function executeMempalace(args: string[], options: any = {}): Promise<any>
 
 export async function isInitialized(dir: string): Promise<boolean> {
   try {
-    const palacePath = path.join(dir, '.mempalace', 'palace');
-    await executeMempalace(['status', '--palace', palacePath]);
+    // Use bare 'status' without --palace. The mempalace CLI resolves the
+    // palace path from ~/.mempalace/config.json or the MEMPALACE_PALACE_PATH
+    // env var automatically. Passing '--palace' after the subcommand is a
+    // positional error in mempalace's argparse (global flags must precede
+    // the subcommand).
+    await executeMempalace(['status']);
     return true;
   } catch (error) {
     return false;

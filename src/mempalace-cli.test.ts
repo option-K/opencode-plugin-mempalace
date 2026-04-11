@@ -44,7 +44,7 @@ describe('mempalace-cli', () => {
     const result = await isInitialized('/test/dir');
     expect(execa).toHaveBeenCalledWith(
       'mempalace',
-      ['status', '--palace', '/test/dir/.mempalace/palace'],
+      ['status'],
       { timeout: 5000 },
     );
     expect(result).toBe(true);
