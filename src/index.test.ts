@@ -122,6 +122,31 @@ describe('opencode-plugin-mempalace', () => {
     }
   });
 
+  it('triggers mine after OpenCode message.updated events reach the threshold', async () => {
+    (cli.mine as jest.Mock).mockResolvedValue(undefined);
+
+    const hooks = await plugin(mockInput, { threshold: 2 });
+
+    if (hooks.event) {
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: { info: { sessionID: 'sess-threshold' } },
+        },
+      });
+      expect(cli.mine).not.toHaveBeenCalled();
+
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: { info: { sessionID: 'sess-threshold' } },
+        },
+      });
+      jest.advanceTimersByTime(2000);
+      expect(cli.mine).toHaveBeenCalledWith('/Users/test/project', 'convos', 'wing_project');
+    }
+  });
+
   it('triggers mine on session idle when there are pending messages', async () => {
     (cli.mine as jest.Mock).mockResolvedValue(undefined);
 
@@ -135,6 +160,31 @@ describe('opencode-plugin-mempalace', () => {
         event: {
           type: 'session.idle',
           properties: { sessionID: 'sess-idle' },
+        },
+      });
+      jest.advanceTimersByTime(2000);
+      expect(cli.mine).toHaveBeenCalledWith('/Users/test/project', 'convos', 'wing_project');
+    }
+  });
+
+  it('tracks OpenCode message.updated events before mining on session idle', async () => {
+    (cli.mine as jest.Mock).mockResolvedValue(undefined);
+
+    const hooks = await plugin(mockInput, { threshold: 15 });
+
+    if (hooks.event) {
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: { sessionID: 'sess-updated', info: { id: 'msg-1' } },
+        },
+      });
+      expect(cli.mine).not.toHaveBeenCalled();
+
+      await hooks.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'sess-updated' },
         },
       });
       jest.advanceTimersByTime(2000);

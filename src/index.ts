@@ -70,31 +70,52 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
     process.exit(143);
   });
 
+  const getSessionID = (properties: any): string | undefined =>
+    properties?.sessionID || properties?.info?.sessionID || properties?.info?.id;
+
+  const mineSession = async (sessionID: string, resetAfterMine = false): Promise<void> => {
+    if (!stateManager.acquireMiningLock(sessionID)) return;
+
+    const state = await ensureInitialized();
+    if (state !== 'ready') {
+      stateManager.releaseMiningLock(sessionID);
+      return;
+    }
+
+    // Delay to protect TTFT
+    setTimeout(() => {
+      mine(dir, 'convos', wing)
+        .catch(() => {})
+        .finally(() => {
+          stateManager.releaseMiningLock(sessionID);
+          if (resetAfterMine) {
+            stateManager.resetCount(sessionID);
+          }
+        });
+    }, 2000);
+  };
+
+  const trackMessage = async (sessionID?: string): Promise<void> => {
+    if (!sessionID) return;
+    if (stateManager.incrementAndCheck(sessionID)) {
+      await mineSession(sessionID);
+    }
+  };
+
   return {
     event: async ({ event }: { event: any }) => {
+      if (event.type === 'message.updated') {
+        await trackMessage(getSessionID(event.properties));
+      }
+
       if (
         event.type === 'session.idle' ||
         event.type === 'session.deleted' ||
         (event.type === 'session.status' && event.properties?.status?.type === 'idle')
       ) {
-        const sessionID = event.properties?.sessionID || event.properties?.info?.id;
+        const sessionID = getSessionID(event.properties);
         if (sessionID && stateManager.hasPendingMessages(sessionID)) {
-          if (!stateManager.acquireMiningLock(sessionID)) return;
-
-          const state = await ensureInitialized();
-          if (state !== 'ready') {
-            stateManager.releaseMiningLock(sessionID);
-            return;
-          }
-
-          setTimeout(() => {
-            mine(dir, 'convos', wing)
-              .catch(() => {})
-              .finally(() => {
-                stateManager.releaseMiningLock(sessionID);
-                stateManager.resetCount(sessionID);
-              });
-          }, 2000);
+          await mineSession(sessionID, true);
         }
       }
     },
@@ -153,24 +174,7 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
     },
 
     'chat.message': async ({ sessionID }: { sessionID: string }) => {
-      if (stateManager.incrementAndCheck(sessionID)) {
-        if (!stateManager.acquireMiningLock(sessionID)) return;
-
-        const state = await ensureInitialized();
-        if (state !== 'ready') {
-          stateManager.releaseMiningLock(sessionID);
-          return;
-        }
-
-        // Delay to protect TTFT
-        setTimeout(() => {
-          mine(dir, 'convos', wing)
-            .catch(() => {})
-            .finally(() => {
-              stateManager.releaseMiningLock(sessionID);
-            });
-        }, 2000);
-      }
+      await trackMessage(sessionID);
     },
   };
 }
