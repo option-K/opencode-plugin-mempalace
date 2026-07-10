@@ -73,6 +73,8 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
   const getSessionID = (properties: any): string | undefined =>
     properties?.sessionID || properties?.info?.sessionID || properties?.info?.id;
 
+  const lastTrackedMessageIDs = new Map<string, string>();
+
   const mineSession = async (sessionID: string, resetAfterMine = false): Promise<void> => {
     if (!stateManager.acquireMiningLock(sessionID)) return;
 
@@ -95,8 +97,13 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
     }, 2000);
   };
 
-  const trackMessage = async (sessionID?: string): Promise<void> => {
+  const trackMessage = async (sessionID?: string, messageID?: string): Promise<void> => {
     if (!sessionID) return;
+    if (messageID && lastTrackedMessageIDs.get(sessionID) === messageID) return;
+    if (messageID) {
+      lastTrackedMessageIDs.set(sessionID, messageID);
+    }
+
     if (stateManager.incrementAndCheck(sessionID)) {
       await mineSession(sessionID);
     }
@@ -105,7 +112,13 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
   return {
     event: async ({ event }: { event: any }) => {
       if (event.type === 'message.updated') {
-        await trackMessage(getSessionID(event.properties));
+        const info = event.properties?.info;
+        if (!info?.role || info.role === 'user') {
+          await trackMessage(
+            event.properties?.sessionID || info?.sessionID,
+            typeof info?.id === 'string' ? info.id : undefined,
+          );
+        }
       }
 
       if (
@@ -116,6 +129,9 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
         const sessionID = getSessionID(event.properties);
         if (sessionID && stateManager.hasPendingMessages(sessionID)) {
           await mineSession(sessionID, true);
+        }
+        if (sessionID && event.type === 'session.deleted') {
+          lastTrackedMessageIDs.delete(sessionID);
         }
       }
     },
@@ -173,8 +189,11 @@ export default async function mempalacePlugin(input: any, options?: any): Promis
       }
     },
 
-    'chat.message': async ({ sessionID }: { sessionID: string }) => {
-      await trackMessage(sessionID);
+    'chat.message': async (
+      { sessionID, messageID }: { sessionID: string; messageID?: string },
+      output?: { message?: { id?: string } },
+    ) => {
+      await trackMessage(sessionID, messageID || output?.message?.id);
     },
   };
 }
