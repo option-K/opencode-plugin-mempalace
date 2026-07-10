@@ -59,8 +59,8 @@ You can pass configuration options to the plugin to customize its behavior. Curr
 - Hooks used:
   - `experimental.chat.system.transform`: Injects memory.
   - `experimental.session.compacting`: Rescues memory from truncation.
-  - `chat.message`: Tracks conversation length and triggers background mining.
-  - `event`: Listens for `session.idle` and `session.deleted` for soft-exit saving.
+  - `event`: Tracks `message.updated` activity for background mining and listens for `session.idle` / `session.deleted` for soft-exit saving.
+  - `chat.message`: Kept as a compatibility hook for older OpenCode event shapes.
   - `process.on('exit' | 'SIGINT' | 'SIGTERM')`: Intercepts hard process exits for emergency synchronous saving.
 - **Workspace Isolation**: It infers the wing name intelligently from the workspace path (e.g. `/projects/my-app` -> `wing_my-app`). Your memory stays isolated per project!
 

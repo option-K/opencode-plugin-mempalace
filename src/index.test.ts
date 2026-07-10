@@ -107,16 +107,77 @@ describe('opencode-plugin-mempalace', () => {
     expect(output.system).toContain('MOCKED_WAKEUP_DATA');
   });
 
-  it('triggers mine after reaching the message threshold', async () => {
+  it('reaches the threshold without double-counting compatibility events', async () => {
     (cli.mine as jest.Mock).mockResolvedValue(undefined);
 
     const hooks = await plugin(mockInput, { threshold: 2 });
 
-    if (hooks['chat.message']) {
-      await hooks['chat.message']({ sessionID: 'sess-1' }, { message: {} as any, parts: [] });
+    if (hooks['chat.message'] && hooks.event) {
+      await hooks['chat.message'](
+        { sessionID: 'sess-1' },
+        { message: { id: 'msg-1' } as any, parts: [] },
+      );
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: {
+            sessionID: 'sess-1',
+            info: { id: 'msg-1', sessionID: 'sess-1', role: 'user' },
+          },
+        },
+      });
       expect(cli.mine).not.toHaveBeenCalled();
 
-      await hooks['chat.message']({ sessionID: 'sess-1' }, { message: {} as any, parts: [] });
+      await hooks['chat.message'](
+        { sessionID: 'sess-1' },
+        { message: { id: 'msg-2' } as any, parts: [] },
+      );
+      jest.advanceTimersByTime(2000);
+      expect(cli.mine).toHaveBeenCalledWith('/Users/test/project', 'convos', 'wing_project');
+    }
+  });
+
+  it('counts distinct user message.updated events and ignores assistant updates', async () => {
+    (cli.mine as jest.Mock).mockResolvedValue(undefined);
+
+    const hooks = await plugin(mockInput, { threshold: 2 });
+
+    if (hooks.event) {
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: {
+            sessionID: 'sess-threshold',
+            info: {
+              id: 'msg-assistant',
+              sessionID: 'sess-threshold',
+              role: 'assistant',
+            },
+          },
+        },
+      });
+      expect(cli.mine).not.toHaveBeenCalled();
+
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: {
+            sessionID: 'sess-threshold',
+            info: { id: 'msg-1', sessionID: 'sess-threshold', role: 'user' },
+          },
+        },
+      });
+      expect(cli.mine).not.toHaveBeenCalled();
+
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: {
+            sessionID: 'sess-threshold',
+            info: { id: 'msg-2', sessionID: 'sess-threshold', role: 'user' },
+          },
+        },
+      });
       jest.advanceTimersByTime(2000);
       expect(cli.mine).toHaveBeenCalledWith('/Users/test/project', 'convos', 'wing_project');
     }
@@ -135,6 +196,31 @@ describe('opencode-plugin-mempalace', () => {
         event: {
           type: 'session.idle',
           properties: { sessionID: 'sess-idle' },
+        },
+      });
+      jest.advanceTimersByTime(2000);
+      expect(cli.mine).toHaveBeenCalledWith('/Users/test/project', 'convos', 'wing_project');
+    }
+  });
+
+  it('tracks OpenCode message.updated events before mining on session idle', async () => {
+    (cli.mine as jest.Mock).mockResolvedValue(undefined);
+
+    const hooks = await plugin(mockInput, { threshold: 15 });
+
+    if (hooks.event) {
+      await hooks.event({
+        event: {
+          type: 'message.updated',
+          properties: { sessionID: 'sess-updated', info: { id: 'msg-1' } },
+        },
+      });
+      expect(cli.mine).not.toHaveBeenCalled();
+
+      await hooks.event({
+        event: {
+          type: 'session.idle',
+          properties: { sessionID: 'sess-updated' },
         },
       });
       jest.advanceTimersByTime(2000);
